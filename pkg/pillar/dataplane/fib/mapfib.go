@@ -1035,7 +1035,7 @@ func PublishLispMetrics(ctx *dptypes.DataplaneContext,
 			sslp := rlocStat.SecondsSinceLastPkt
 
 			rlocStatEntry := types.LispRlocStatistics{
-				Rloc: rloc,
+				Rloc:                   rloc,
 				SecondsSinceLastPacket: uint64(sslp),
 				Stats: types.LispPktStat{
 					Pkts:  pktCount,
