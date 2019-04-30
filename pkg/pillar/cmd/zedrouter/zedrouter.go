@@ -2432,21 +2432,25 @@ func doAppNetworkConfigModify(ctx *zedrouterContext, key string,
 	ipsets := compileAppInstanceIpsets(ctx, config.OverlayNetworkList,
 		config.UnderlayNetworkList)
 
-	// Look for ACL changes in overlay
-	doAppNetworkModifyAllOverlayNetworks(ctx, config, status, ipsets)
+	// If we are not activated, then the doActivate below will set up
+	// the ACLs
+	if status.Activated {
+		// Look for ACL changes in overlay
+		doAppNetworkModifyAllOverlayNetworks(ctx, config, status, ipsets)
 
-	// Look for ACL changes in underlay
-	doAppNetworkModifyAllUnderlayNetworks(ctx, config, status, ipsets)
+		// Look for ACL changes in underlay
+		doAppNetworkModifyAllUnderlayNetworks(ctx, config, status, ipsets)
 
-	// Write out what we modified to AppNetworkStatus
-	// Note that lengths are the same as before
-	for i := range config.OverlayNetworkList {
-		status.OverlayNetworkList[i].OverlayNetworkConfig =
-			config.OverlayNetworkList[i]
-	}
-	for i := range config.UnderlayNetworkList {
-		status.UnderlayNetworkList[i].UnderlayNetworkConfig =
-			config.UnderlayNetworkList[i]
+		// Write out what we modified to AppNetworkStatus
+		// Note that lengths are the same as before
+		for i := range config.OverlayNetworkList {
+			status.OverlayNetworkList[i].OverlayNetworkConfig =
+				config.OverlayNetworkList[i]
+		}
+		for i := range config.UnderlayNetworkList {
+			status.UnderlayNetworkList[i].UnderlayNetworkConfig =
+				config.UnderlayNetworkList[i]
+		}
 	}
 
 	if config.Activate && !status.Activated {
@@ -2610,7 +2614,6 @@ func doAppNetworkModifyUnderlayNetworkWithNetworkInstance(
 			newIpsets, false)
 		startDnsmasq(bridgeName)
 	}
-	netstatus.RemoveVif(ulStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	publishNetworkInstanceStatus(ctx, netstatus)
@@ -2654,7 +2657,6 @@ func doAppNetworkModifyUnderlayNetworkWithNetworkObject(
 			newIpsets, false)
 		startDnsmasq(bridgeName)
 	}
-	netstatus.RemoveVif(ulStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	publishNetworkObjectStatus(ctx, netstatus)
@@ -2736,7 +2738,6 @@ func doAppNetworkModifyOverlayNetworkWithNetworkInstance(
 			newIpsets, netstatus.Ipv4Eid)
 		startDnsmasq(bridgeName)
 	}
-	netstatus.NetworkInstanceInfo.RemoveVif(olStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	publishNetworkInstanceStatus(ctx, netstatus)
@@ -2810,7 +2811,6 @@ func doAppNetworkModifyOverlayNetworkWithNetworkObject(
 			newIpsets, netstatus.Ipv4Eid)
 		startDnsmasq(bridgeName)
 	}
-	netstatus.NetworkInstanceInfo.RemoveVif(olStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	publishNetworkObjectStatus(ctx, netstatus)
@@ -3031,6 +3031,7 @@ func appNetworkDoInactivateUnderlayNetworkWithNetworkInstance(
 			newIpsets, false)
 		startDnsmasq(bridgeName)
 	}
+	netstatus.RemoveVif(ulStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	maybeRemoveStaleIpsets(staleIpsets)
@@ -3113,6 +3114,7 @@ func appNetworkDoInactivateUnderlayNetworkWithNetworkObject(
 			newIpsets, false)
 		startDnsmasq(bridgeName)
 	}
+	netstatus.RemoveVif(ulStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	maybeRemoveStaleIpsets(staleIpsets)
@@ -3208,6 +3210,7 @@ func appNetworkDoInactivateOverlayNetworkWithNetworkInstance(
 			newIpsets, netstatus.Ipv4Eid)
 		startDnsmasq(bridgeName)
 	}
+	netstatus.RemoveVif(olStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	maybeRemoveStaleIpsets(staleIpsets)
@@ -3328,6 +3331,7 @@ func appNetworkDoInactivateOverlayNetworkWithNetworkObject(
 			newIpsets, netstatus.Ipv4Eid)
 		startDnsmasq(bridgeName)
 	}
+	netstatus.RemoveVif(olStatus.Vif)
 	netstatus.BridgeIPSets = newIpsets
 	log.Infof("set BridgeIPSets to %v for %s", newIpsets, netstatus.Key())
 	maybeRemoveStaleIpsets(staleIpsets)
