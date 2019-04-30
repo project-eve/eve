@@ -25,7 +25,6 @@ import (
 	psutilnet "github.com/shirou/gopsutil/net"
 	log "github.com/sirupsen/logrus"
 	"github.com/zededa/eve/pkg/pillar/agentlog"
-	"github.com/zededa/eve/pkg/pillar/api/zmet"
 	"github.com/zededa/eve/pkg/pillar/cast"
 	"github.com/zededa/eve/pkg/pillar/diskmetrics"
 	"github.com/zededa/eve/pkg/pillar/flextimer"
@@ -33,6 +32,7 @@ import (
 	"github.com/zededa/eve/pkg/pillar/netclone"
 	"github.com/zededa/eve/pkg/pillar/types"
 	"github.com/zededa/eve/pkg/pillar/zedcloud"
+	"github.com/zededa/eve/sdk/go/zmet"
 )
 
 // Also report usage for these paths
@@ -961,6 +961,7 @@ func PublishDeviceInfoToZedCloud(ctx *zedagentContext) {
 	for _, st := range items {
 		bos := cast.CastBaseOsStatus(st)
 		if bos.PartitionLabel != "" {
+			// Already reported above
 			continue
 		}
 		log.Debugf("reportMetrics sending unattached bos for %s\n",
@@ -1107,8 +1108,16 @@ func PublishDeviceInfoToZedCloud(ctx *zedagentContext) {
 func addUserSwInfo(ctx *zedagentContext, swInfo *zmet.ZInfoDevSW) {
 	switch swInfo.Status {
 	case zmet.ZSwState_INITIAL:
-		swInfo.UserStatus = zmet.BaseOsStatus_UPDATING
-		swInfo.SubStatus = "Initializing update"
+		// If Unused and partitionLabel is set them it
+		// is the uninitialized IMGB partition which we don't report
+		if swInfo.PartitionState == "unused" &&
+			swInfo.PartitionLabel != "" {
+
+			swInfo.UserStatus = zmet.BaseOsStatus_NONE
+		} else {
+			swInfo.UserStatus = zmet.BaseOsStatus_UPDATING
+			swInfo.SubStatus = "Initializing update"
+		}
 	case zmet.ZSwState_DOWNLOAD_STARTED:
 		swInfo.UserStatus = zmet.BaseOsStatus_UPDATING
 		swInfo.SubStatus = fmt.Sprintf("Downloading %d%% done", swInfo.DownloadProgress)
@@ -1124,6 +1133,7 @@ func addUserSwInfo(ctx *zedagentContext, swInfo *zmet.ZInfoDevSW) {
 			swInfo.UserStatus = zmet.BaseOsStatus_UPDATING
 			swInfo.SubStatus = "Downloaded and verified"
 		} else {
+			// XXX Remove once we have one slot
 			swInfo.UserStatus = zmet.BaseOsStatus_NONE
 		}
 	case zmet.ZSwState_INSTALLED:
