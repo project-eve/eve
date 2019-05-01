@@ -106,20 +106,20 @@ endif
 # since they are not getting published in Docker HUB
 PKGS=$(shell ls -d pkg/* | grep -Ev "eve|test-microsvcs|u-boot")
 
-
 # Top-level targets
-
-.PHONY: run pkgs help build-tools live rootfs config installer live
 
 all: help
 
+test: $(GOBUILDER) | $(DIST)
+	@echo Running tests on $(GOMODULE)
+	@$(DOCKER_GO) "go test -v $(GOMODULE)/... 2>&1 | go-junit-report" $(GOTREE) $(GOMODULE) | sed -e '1d' > $(DIST)/results.xml
+
+clean:
+	rm -rf $(DIST) pkg/pillar/Dockerfile pkg/qrexec-lib/Dockerfile pkg/qrexec-dom0/Dockerfile \
+	       images/installer.yml images/rootfs.yml.in
+
 build-tools: $(LINUXKIT)
 	@echo Done building $<
-
-pkgs: RESCAN_DEPS=
-pkgs: FORCE_BUILD=
-pkgs: build-tools $(PKGS)
-	@echo Done building packages
 
 $(EFI_PART): $(LINUXKIT) | $(DIST)/bios
 	cd $| ; $(DOCKER_UNPACK) $(shell $(LINUXKIT) pkg show-tag pkg/grub)-$(DOCKER_ARCH_TAG) EFI
@@ -198,6 +198,21 @@ $(INSTALLER_IMG).raw: $(ROOTFS_IMG)_installer.img $(CONFIG_IMG) | $(DIST)
 $(INSTALLER_IMG).iso: images/installer.yml $(ROOTFS_IMG) $(CONFIG_IMG) | $(DIST)
 	./tools/makeiso.sh $< $@
 
+# top-level linuxkit packages targets, note the one enforcing ordering between packages
+pkgs: RESCAN_DEPS=
+pkgs: FORCE_BUILD=
+pkgs: build-tools $(PKGS)
+	@echo Done building packages
+
+pkg/pillar: pkg/lisp pkg/xen-tools pkg/dnsmasq pkg/strongswan pkg/gpt-tools pkg/watchdog eve-pillar
+	@true
+pkg/qrexec-dom0: pkg/qrexec-lib pkg/xen-tools eve-qrexec-dom0
+	@true
+pkg/qrexec-lib: pkg/xen-tools eve-qrexec-lib
+	@true
+pkg/%: eve-% FORCE
+	@true
+
 eve: Makefile $(BIOS_IMG) $(CONFIG_IMG) $(INSTALLER_IMG).iso $(INSTALLER_IMG).raw $(ROOTFS_IMG) $(LIVE_IMG).img images/rootfs.yml images/installer.yml
 	cp pkg/eve/* Makefile images/rootfs.yml images/installer.yml $(DIST)
 	$(LINUXKIT) pkg $(LINUXKIT_PKG_TARGET) --hash-path $(CURDIR) $(LINUXKIT_OPTS) $(DIST)
@@ -258,8 +273,8 @@ endif
 %/Dockerfile: %/Dockerfile.in build-tools $(RESCAN_DEPS)
 	@$(PARSE_PKGS) $< > $@
 
-pkg/%: pkg/%/Dockerfile build-tools $(RESCAN_DEPS)
-	@$(LINUXKIT) pkg $(LINUXKIT_PKG_TARGET) $(LINUXKIT_OPTS) $@
+eve-%: pkg/%/Dockerfile build-tools $(RESCAN_DEPS)
+	@$(LINUXKIT) pkg $(LINUXKIT_PKG_TARGET) $(LINUXKIT_OPTS) pkg/$*
 
 %-show-tag:
 	@$(LINUXKIT) pkg show-tag pkg/$*
@@ -268,7 +283,7 @@ pkg/%: pkg/%/Dockerfile build-tools $(RESCAN_DEPS)
 	@$(DOCKER_GO) "dep ensure -update $(GODEP_NAME)" $(dir $@)
 	@echo Done updating $@
 
-.PHONY: FORCE
+.PHONY: all clean test run pkgs help build-tools live rootfs config installer live FORCE $(DIST)
 FORCE:
 
 help:
@@ -285,6 +300,8 @@ help:
 	@echo "all the execution is done via qemu."
 	@echo
 	@echo "Commonly used maitenance and development targets:"
+	@echo "   test           run EVE tests"
+	@echo "   clean          clean build artifacts in a current directory (doesn't clean Docker)"
 	@echo "   release        prepare branch for a release (VERSION=x.y.z required)"
 	@echo "   shell          drop into docker container setup for Go development"
 	@echo
