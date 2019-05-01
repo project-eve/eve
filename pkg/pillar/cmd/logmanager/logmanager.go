@@ -683,6 +683,7 @@ func sendCtxInit() {
 			time.Sleep(time.Second)
 			continue
 		}
+		zedcloudCtx.DevUUID = devUUID
 		break
 	}
 	log.Infof("Read UUID %s\n", devUUID)
