@@ -18,7 +18,7 @@ APPS1 = logmanager ledmanager downloader verifier client zedrouter domainmgr \
         identitymgr zedmanager zedagent hardwaremodel ipcmonitor nim diag    \
         baseosmgr wstunnelclient conntrack
 
-.PHONY: all clean build test build-docker build-docker-git shell 
+.PHONY: all clean build test build-docker build-docker-git shell
 
 all: build
 
