@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
+	"github.com/containerd/console"
 	"github.com/creack/goselect"
 	"github.com/gorilla/websocket"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/crypto/ssh/terminal"
 )
 
 // message types for gotty
@@ -246,6 +246,9 @@ func (c *Client) Connect() error {
 		return err
 	}
 
+	// Initialize message types for gotty
+	c.initMessageType()
+
 	go c.pingLoop()
 
 	return nil
@@ -300,8 +303,6 @@ func (c *Client) ExitLoop() {
 
 // Loop will look indefinitely for new messages
 func (c *Client) Loop() error {
-	// Initialize message types for gotty
-	c.initMessageType()
 
 	if !c.Connected {
 		err := c.Connect()
@@ -309,6 +310,12 @@ func (c *Client) Loop() error {
 			return err
 		}
 	}
+	term := console.Current()
+	err := term.SetRaw()
+	if err != nil {
+		return fmt.Errorf("Error setting raw terminal: %v", err)
+	}
+	defer term.Reset()
 
 	wg := &sync.WaitGroup{}
 
@@ -406,10 +413,6 @@ func (c *Client) writeLoop(wg *sync.WaitGroup) posionReason {
 	fname := "writeLoop"
 
 	buff := make([]byte, 128)
-	oldState, err := terminal.MakeRaw(0)
-	if err == nil {
-		defer terminal.Restore(0, oldState)
-	}
 
 	rdfs := &goselect.FDSet{}
 	reader := io.ReadCloser(os.Stdin)

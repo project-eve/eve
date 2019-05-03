@@ -7,7 +7,7 @@ import (
 	"github.com/gophercloud/gophercloud"
 )
 
-// Upload uploads an image file.
+// Upload uploads image file
 func Upload(client *gophercloud.ServiceClient, id string, data io.Reader) (r UploadResult) {
 	_, r.Err = client.Put(uploadURL(client, id), data, nil, &gophercloud.RequestOpts{
 		MoreHeaders: map[string]string{"Content-Type": "application/octet-stream"},
@@ -16,7 +16,7 @@ func Upload(client *gophercloud.ServiceClient, id string, data io.Reader) (r Upl
 	return
 }
 
-// Download retrieves an image.
+// Download retrieves file
 func Download(client *gophercloud.ServiceClient, id string) (r DownloadResult) {
 	var resp *http.Response
 	resp, r.Err = client.Get(downloadURL(client, id), nil, nil)

@@ -7,14 +7,12 @@ import (
 	"github.com/gophercloud/gophercloud"
 )
 
-// UploadResult is the result of an upload image operation. Call its ExtractErr
-// method to determine if the request succeeded or failed.
+// UploadResult is the result of an upload image operation
 type UploadResult struct {
 	gophercloud.ErrResult
 }
 
-// DownloadResult is the result of a download image operation. Call its Extract
-// method to gain access to the image data.
+// DownloadResult is the result of a download image operation
 type DownloadResult struct {
 	gophercloud.Result
 }

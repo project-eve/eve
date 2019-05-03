@@ -74,10 +74,6 @@ type (
 		NotAValidType() string
 		Duplicated() string
 		HttpBadStatus() string
-		ParseError() string
-
-		ConditionThen() string
-		ConditionElse() string
 
 		// ErrorFormat
 		ErrorFormat() string
@@ -253,7 +249,7 @@ func (l DefaultLocale) ReferenceMustBeCanonical() string {
 }
 
 func (l DefaultLocale) NotAValidType() string {
-	return `has a primitive type that is NOT VALID -- given: {{.given}} Expected valid values are:{{.expected}}`
+	return `{{.type}} is not a valid type -- `
 }
 
 func (l DefaultLocale) Duplicated() string {
@@ -269,25 +265,11 @@ func (l DefaultLocale) ErrorFormat() string {
 	return `{{.field}}: {{.description}}`
 }
 
-//Parse error
-func (l DefaultLocale) ParseError() string {
-	return `Expected: {{.expected}}, given: Invalid JSON`
-}
-
-//If/Else
-func (l DefaultLocale) ConditionThen() string {
-	return `Must validate "then" as "if" was valid`
-}
-
-func (l DefaultLocale) ConditionElse() string {
-	return `Must validate "else" as "if" was not valid`
-}
-
 const (
 	STRING_NUMBER                     = "number"
 	STRING_ARRAY_OF_STRINGS           = "array of strings"
 	STRING_ARRAY_OF_SCHEMAS           = "array of schemas"
-	STRING_SCHEMA                     = "valid schema"
+	STRING_SCHEMA                     = "schema"
 	STRING_SCHEMA_OR_ARRAY_OF_STRINGS = "schema or array of strings"
 	STRING_PROPERTIES                 = "properties"
 	STRING_DEPENDENCY                 = "dependency"

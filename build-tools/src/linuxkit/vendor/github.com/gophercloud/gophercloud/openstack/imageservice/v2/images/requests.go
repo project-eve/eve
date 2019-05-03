@@ -15,8 +15,7 @@ type ListOptsBuilder interface {
 // the API. Filtering is achieved by passing in struct field values that map to
 // the server attributes you want to see returned. Marker and Limit are used
 // for pagination.
-//
-// http://developer.openstack.org/api-ref-image-v2.html
+//http://developer.openstack.org/api-ref-image-v2.html
 type ListOpts struct {
 	// Integer value for the limit of values to return.
 	Limit int `q:"limit"`
@@ -24,39 +23,16 @@ type ListOpts struct {
 	// UUID of the server at which you want to set a marker.
 	Marker string `q:"marker"`
 
-	// Name filters on the name of the image.
-	Name string `q:"name"`
-
-	// Visibility filters on the visibility of the image.
-	Visibility ImageVisibility `q:"visibility"`
-
-	// MemberStatus filters on the member status of the image.
+	Name         string            `q:"name"`
+	Visibility   ImageVisibility   `q:"visibility"`
 	MemberStatus ImageMemberStatus `q:"member_status"`
-
-	// Owner filters on the project ID of the image.
-	Owner string `q:"owner"`
-
-	// Status filters on the status of the image.
-	Status ImageStatus `q:"status"`
-
-	// SizeMin filters on the size_min image property.
-	SizeMin int64 `q:"size_min"`
-
-	// SizeMax filters on the size_max image property.
-	SizeMax int64 `q:"size_max"`
-
-	// Sort sorts the results using the new style of sorting. See the OpenStack
-	// Image API reference for the exact syntax.
-	//
-	// Sort cannot be used with the classic sort options (sort_key and sort_dir).
-	Sort string `q:"sort"`
-
-	// SortKey will sort the results based on a specified image property.
-	SortKey string `q:"sort_key"`
-
-	// SortDir will sort the list results either ascending or decending.
-	SortDir string `q:"sort_dir"`
-	Tag     string `q:"tag"`
+	Owner        string            `q:"owner"`
+	Status       ImageStatus       `q:"status"`
+	SizeMin      int64             `q:"size_min"`
+	SizeMax      int64             `q:"size_max"`
+	SortKey      string            `q:"sort_key"`
+	SortDir      string            `q:"sort_dir"`
+	Tag          string            `q:"tag"`
 }
 
 // ToImageListQuery formats a ListOpts into a query string.
@@ -65,7 +41,7 @@ func (opts ListOpts) ToImageListQuery() (string, error) {
 	return q.String(), err
 }
 
-// List implements image list request.
+// List implements image list request
 func List(c *gophercloud.ServiceClient, opts ListOptsBuilder) pagination.Pager {
 	url := listURL(c)
 	if opts != nil {
@@ -80,13 +56,14 @@ func List(c *gophercloud.ServiceClient, opts ListOptsBuilder) pagination.Pager {
 	})
 }
 
-// CreateOptsBuilder allows extensions to add parameters to the Create request.
+// CreateOptsBuilder describes struct types that can be accepted by the Create call.
+// The CreateOpts struct in this package does.
 type CreateOptsBuilder interface {
 	// Returns value that can be passed to json.Marshal
 	ToImageCreateMap() (map[string]interface{}, error)
 }
 
-// CreateOpts represents options used to create an image.
+// CreateOpts implements CreateOptsBuilder
 type CreateOpts struct {
 	// Name is the name of the new image.
 	Name string `json:"name" required:"true"`
@@ -141,7 +118,7 @@ func (opts CreateOpts) ToImageCreateMap() (map[string]interface{}, error) {
 	return b, nil
 }
 
-// Create implements create image request.
+// Create implements create image request
 func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r CreateResult) {
 	b, err := opts.ToImageCreateMap()
 	if err != nil {
@@ -152,19 +129,19 @@ func Create(client *gophercloud.ServiceClient, opts CreateOptsBuilder) (r Create
 	return
 }
 
-// Delete implements image delete request.
+// Delete implements image delete request
 func Delete(client *gophercloud.ServiceClient, id string) (r DeleteResult) {
 	_, r.Err = client.Delete(deleteURL(client, id), nil)
 	return
 }
 
-// Get implements image get request.
+// Get implements image get request
 func Get(client *gophercloud.ServiceClient, id string) (r GetResult) {
 	_, r.Err = client.Get(getURL(client, id), &r.Body, nil)
 	return
 }
 
-// Update implements image updated request.
+// Update implements image updated request
 func Update(client *gophercloud.ServiceClient, id string, opts UpdateOptsBuilder) (r UpdateResult) {
 	b, err := opts.ToImageUpdateMap()
 	if err != nil {
@@ -178,11 +155,9 @@ func Update(client *gophercloud.ServiceClient, id string, opts UpdateOptsBuilder
 	return
 }
 
-// UpdateOptsBuilder allows extensions to add additional parameters to the
-// Update request.
+// UpdateOptsBuilder implements UpdateOptsBuilder
 type UpdateOptsBuilder interface {
-	// returns value implementing json.Marshaler which when marshaled matches
-	// the patch schema:
+	// returns value implementing json.Marshaler which when marshaled matches the patch schema:
 	// http://specs.openstack.org/openstack/glance-specs/specs/api/v2/http-patch-image-api-v2.html
 	ToImageUpdateMap() ([]interface{}, error)
 }
@@ -190,8 +165,7 @@ type UpdateOptsBuilder interface {
 // UpdateOpts implements UpdateOpts
 type UpdateOpts []Patch
 
-// ToImageUpdateMap assembles a request body based on the contents of
-// UpdateOpts.
+// ToImageUpdateMap builder
 func (opts UpdateOpts) ToImageUpdateMap() ([]interface{}, error) {
 	m := make([]interface{}, len(opts))
 	for i, patch := range opts {
@@ -201,18 +175,18 @@ func (opts UpdateOpts) ToImageUpdateMap() ([]interface{}, error) {
 	return m, nil
 }
 
-// Patch represents a single update to an existing image. Multiple updates
-// to an image can be submitted at the same time.
+// Patch represents a single update to an existing image. Multiple updates to an image can be
+// submitted at the same time.
 type Patch interface {
 	ToImagePatchMap() map[string]interface{}
 }
 
-// UpdateVisibility represents an updated visibility property request.
+// UpdateVisibility updated visibility
 type UpdateVisibility struct {
 	Visibility ImageVisibility
 }
 
-// ToImagePatchMap assembles a request body based on UpdateVisibility.
+// ToImagePatchMap builder
 func (u UpdateVisibility) ToImagePatchMap() map[string]interface{} {
 	return map[string]interface{}{
 		"op":    "replace",
@@ -221,12 +195,12 @@ func (u UpdateVisibility) ToImagePatchMap() map[string]interface{} {
 	}
 }
 
-// ReplaceImageName represents an updated image_name property request.
+// ReplaceImageName implements Patch
 type ReplaceImageName struct {
 	NewName string
 }
 
-// ToImagePatchMap assembles a request body based on ReplaceImageName.
+// ToImagePatchMap builder
 func (r ReplaceImageName) ToImagePatchMap() map[string]interface{} {
 	return map[string]interface{}{
 		"op":    "replace",
@@ -235,12 +209,12 @@ func (r ReplaceImageName) ToImagePatchMap() map[string]interface{} {
 	}
 }
 
-// ReplaceImageChecksum represents an updated checksum property request.
+// ReplaceImageChecksum implements Patch
 type ReplaceImageChecksum struct {
 	Checksum string
 }
 
-// ReplaceImageChecksum assembles a request body based on ReplaceImageChecksum.
+// ReplaceImageChecksum builder
 func (rc ReplaceImageChecksum) ToImagePatchMap() map[string]interface{} {
 	return map[string]interface{}{
 		"op":    "replace",
@@ -249,12 +223,12 @@ func (rc ReplaceImageChecksum) ToImagePatchMap() map[string]interface{} {
 	}
 }
 
-// ReplaceImageTags represents an updated tags property request.
+// ReplaceImageTags implements Patch
 type ReplaceImageTags struct {
 	NewTags []string
 }
 
-// ToImagePatchMap assembles a request body based on ReplaceImageTags.
+// ToImagePatchMap builder
 func (r ReplaceImageTags) ToImagePatchMap() map[string]interface{} {
 	return map[string]interface{}{
 		"op":    "replace",
