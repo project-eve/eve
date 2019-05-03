@@ -3,7 +3,7 @@
 #
 # Run make (with no arguments) to see help on what targets are available
 
-GOVER ?= 1.9.1
+GOVER ?= 1.12.4
 PKGBASE=github.com/zededa/eve
 GOMODULE=$(PKGBASE)/pkg/pillar
 GOTREE=$(CURDIR)/pkg/pillar
@@ -250,12 +250,11 @@ shell: $(GOBUILDER)
 #
 $(LINUXKIT): CGO_ENABLED=0
 $(LINUXKIT): GOOS=$(shell uname -s | tr '[A-Z]' '[a-z]')
-$(LINUXKIT): $(CURDIR)/build-tools/src/linuxkit/Gopkg.lock $(CURDIR)/build-tools/bin/manifest-tool
-	@$(DOCKER_GO) "go build -ldflags '-X version.GitCommit=$(EVE_TREE_TAG)' -o /go/bin/linuxkit \
-                          vendor/github.com/linuxkit/linuxkit/src/cmd/linuxkit" $(dir $<) / $(dir $@)
-$(CURDIR)/build-tools/bin/manifest-tool: $(CURDIR)/build-tools/src/manifest-tool/Gopkg.lock
-	@$(DOCKER_GO) "go build -ldflags '-X main.gitCommit=$(EVE_TREE_TAG)' -o /go/bin/manifest-tool \
-                          vendor/github.com/estesp/manifest-tool" $(dir $<) / $(dir $@)
+$(LINUXKIT): $(CURDIR)/build-tools/src/linuxkit $(CURDIR)/build-tools/bin/manifest-tool $(GOBUILDER)
+	@$(DOCKER_GO) "go build -ldflags '-X main.GitCommit=$(EVE_TREE_TAG)' -o /go/bin/$(@F) ." $< $(@F) $(dir $@)
+$(CURDIR)/build-tools/bin/manifest-tool: $(CURDIR)/build-tools/src/manifest-tool $(GOBUILDER)
+	@$(DOCKER_GO) "go build -ldflags '-X main.gitCommit=$(EVE_TREE_TAG)' -o /go/bin/$(@F) ." $< $(@F) $(dir $@)
+
 $(GOBUILDER):
 ifneq ($(BUILD),local)
 	@echo "Creating go builder image for user $(USER)"
@@ -278,10 +277,6 @@ eve-%: pkg/%/Dockerfile build-tools $(RESCAN_DEPS)
 
 %-show-tag:
 	@$(LINUXKIT) pkg show-tag pkg/$*
-
-%Gopkg.lock: %Gopkg.toml | $(GOBUILDER)
-	@$(DOCKER_GO) "dep ensure -update $(GODEP_NAME)" $(dir $@)
-	@echo Done updating $@
 
 .PHONY: all clean test run pkgs help build-tools live rootfs config installer live FORCE $(DIST)
 FORCE:
