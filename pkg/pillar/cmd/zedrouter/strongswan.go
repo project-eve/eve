@@ -25,237 +25,12 @@ const (
 	AnyIpAddr         = "%any"
 )
 
-func strongswanCreate(ctx *zedrouterContext, config types.NetworkServiceConfig,
-	status *types.NetworkServiceStatus) error {
-
-	log.Infof("strongswanCreate(%s)\n", config.DisplayName)
-
-	// parse and structure the config
-	vpnConfig, err := strongSwanConfigGet(ctx, config)
-	if err != nil {
-		return err
-	}
-
-	// stringify and store in status
-	bytes, err := json.Marshal(vpnConfig)
-	if err != nil {
-		return err
-	}
-
-	status.OpaqueStatus = string(bytes)
-	log.Infof("StrongSwanCreate: %s\n", status.OpaqueStatus)
-
-	// reset any previous config
-	if err := ipSecServiceInactivate(vpnConfig); err != nil {
-		return err
-	}
-
-	// create the ipsec config files, tunnel, routes  and filter-rules
-	if err := strongSwanVpnCreate(vpnConfig); err != nil {
-		log.Errorf("%s StrongSwanVpn create\n", err.Error())
-		return err
-	}
-	return nil
-}
-
-func strongswanDelete(status *types.NetworkServiceStatus) {
-
-	log.Infof("strongswanDelete(%s)\n", status.DisplayName)
-
-	vpnConfig, err := strongSwanVpnStatusParse(status.OpaqueStatus)
-	if err != nil {
-		log.Infof("strongswanDelete config absent\n")
-		return
-	}
-
-	if err := strongSwanVpnDelete(vpnConfig); err != nil {
-		log.Errorf("%s StrongSwanVpn delete\n", err.Error())
-	}
-}
-
-func strongswanActivate(ctx *zedrouterContext, config types.NetworkServiceConfig,
-	status *types.NetworkServiceStatus, netstatus *types.NetworkObjectStatus) error {
-
-	log.Infof("strongswanActivate(%s)\n", status.DisplayName)
-
-	vpnConfig, err := strongSwanVpnStatusParse(status.OpaqueStatus)
-	if err != nil {
-		log.Errorf("StrongSwanVpn config absent\n")
-		return err
-	}
-
-	if err := strongSwanVpnActivate(vpnConfig); err != nil {
-		log.Errorf("%s StrongSwanVpn activate\n", err.Error())
-		return err
-	}
-	return nil
-}
-
-func strongswanInactivate(ctx *zedrouterContext, status *types.NetworkServiceStatus,
-	netstatus *types.NetworkObjectStatus) {
-
-	log.Infof("strongswanInactivate(%s)\n", status.DisplayName)
-	vpnConfig, err := strongSwanVpnStatusParse(status.OpaqueStatus)
-	if err != nil {
-		log.Errorf("StrongSwanVpn config absent\n")
-	}
-
-	if err := strongSwanVpnInactivate(vpnConfig); err != nil {
-		log.Errorf("%s StrongSwanVpn inactivate\n", err.Error())
-		return
-	}
-}
-
-// XXX remove this when we remove NetworkObject
-// StrongSwan Vpn IpSec Tenneling handler routines
-func strongSwanConfigGet(ctx *zedrouterContext,
-	config types.NetworkServiceConfig) (types.VpnServiceConfig, error) {
-
-	port := types.NetLinkConfig{}
-	appLink := types.NetLinkConfig{}
-	vpnConfig := types.VpnServiceConfig{}
-	appNetPresent := false
-
-	// if adapter is not set, return
-	if config.Adapter == "" {
-		return vpnConfig, errors.New("port config is absent")
-	}
-
-	// port ip address error
-	srcIp, err := types.GetLocalAddrAnyNoLinkLocal(*ctx.deviceNetworkStatus, 0,
-		config.Adapter)
-	if err != nil {
-		return vpnConfig, err
-	}
-
-	port.Name = types.AdapterToIfName(ctx.deviceNetworkStatus,
-		config.Adapter)
-	port.IpAddr = srcIp.String()
-
-	// app net information
-	// XXX whole function will be removed when we remove NetworkObject
-	appNet := lookupNetworkObjectConfig(ctx, config.AppLink.String())
-	if appNet != nil {
-		if appNet.Type != types.NT_IPV4 {
-			return vpnConfig, errors.New("appnet is not IPv4")
-		}
-		appNetPresent = true
-		appLink.SubnetBlock = appNet.Subnet.String()
-	}
-
-	vpnCloudConfig, err := strongSwanVpnConfigParse(config.OpaqueConfig)
-	if err != nil {
-		return vpnConfig, err
-	}
-
-	// XXX:TBD  host names to ip addresses in the configuration
-	vpnConfig.VpnRole = vpnCloudConfig.VpnRole
-	vpnConfig.IsClient = vpnCloudConfig.IsClient
-	vpnConfig.PolicyBased = vpnCloudConfig.PolicyBased
-	vpnConfig.GatewayConfig = vpnCloudConfig.GatewayConfig
-	vpnConfig.PortConfig = port
-	vpnConfig.AppLinkConfig = appLink
-
-	// fill and validate the ip address/subnet
-	if vpnConfig.GatewayConfig.IpAddr == PortIpAddrType {
-		vpnConfig.GatewayConfig.IpAddr = port.IpAddr
-	}
-	if appNetPresent &&
-		vpnConfig.GatewayConfig.SubnetBlock == AppLinkSubnetType {
-		vpnConfig.GatewayConfig.SubnetBlock = appLink.SubnetBlock
-	}
-	if err := vpnValidateIpAddr(vpnConfig.GatewayConfig.IpAddr, true); err != nil {
-		return vpnConfig, err
-	}
-	if err := vpnValidateSubnet(vpnConfig.GatewayConfig.SubnetBlock); err != nil {
-		return vpnConfig, err
-	}
-	vpnConfig.ClientConfigList = make([]types.VpnClientConfig,
-		len(vpnCloudConfig.ClientConfigList))
-
-	for idx, ssClientConfig := range vpnCloudConfig.ClientConfigList {
-		clientConfig := new(types.VpnClientConfig)
-		clientConfig.IpAddr = ssClientConfig.IpAddr
-		clientConfig.SubnetBlock = ssClientConfig.SubnetBlock
-		clientConfig.PreSharedKey = ssClientConfig.PreSharedKey
-		clientConfig.TunnelConfig.Name = fmt.Sprintf("%s_%d", vpnConfig.VpnRole, idx)
-		clientConfig.TunnelConfig.Key = "100"
-		clientConfig.TunnelConfig.Mtu = "1419"
-		clientConfig.TunnelConfig.Metric = "50"
-		clientConfig.TunnelConfig.LocalIpAddr = ssClientConfig.TunnelConfig.LocalIpAddr
-		clientConfig.TunnelConfig.RemoteIpAddr = ssClientConfig.TunnelConfig.RemoteIpAddr
-
-		if clientConfig.IpAddr == PortIpAddrType {
-			clientConfig.IpAddr = port.IpAddr
-		}
-		if appNetPresent &&
-			clientConfig.SubnetBlock == AppLinkSubnetType {
-			clientConfig.SubnetBlock = appLink.SubnetBlock
-		}
-		if clientConfig.IpAddr == "" {
-			clientConfig.IpAddr = AnyIpAddr
-		}
-		// validate the ip address/subnet values
-		if err := vpnValidateIpAddr(clientConfig.IpAddr, false); err != nil {
-			return vpnConfig, err
-		}
-		if err := vpnValidateSubnet(clientConfig.SubnetBlock); err != nil {
-			return vpnConfig, err
-		}
-		tunnelConfig := clientConfig.TunnelConfig
-		if err := vpnValidateLinkLocal(tunnelConfig.LocalIpAddr); err != nil {
-			return vpnConfig, err
-		}
-		if err := vpnValidateLinkLocal(tunnelConfig.RemoteIpAddr); err != nil {
-			return vpnConfig, err
-		}
-		if clientConfig.SubnetBlock == vpnConfig.GatewayConfig.SubnetBlock {
-			return vpnConfig, errors.New("Peer is on Same Subnet")
-		}
-		vpnConfig.ClientConfigList[idx] = *clientConfig
-	}
-
-	if !vpnConfig.IsClient {
-		if vpnConfig.GatewayConfig.IpAddr != port.IpAddr {
-			errorStr := vpnConfig.GatewayConfig.IpAddr
-			errorStr = errorStr + ", port: " + port.IpAddr
-			return vpnConfig, errors.New("IpAddr Mismatch, GatewayIp: " + errorStr)
-		}
-		// ensure appNet match
-		if appNetPresent &&
-			vpnConfig.GatewayConfig.SubnetBlock != "" &&
-			vpnConfig.GatewayConfig.SubnetBlock != appLink.SubnetBlock {
-			errorStr := vpnConfig.GatewayConfig.SubnetBlock + ", appNet: " + appLink.SubnetBlock
-			return vpnConfig, errors.New("Subnet Mismatch: " + errorStr)
-		}
-	} else {
-		// for clients
-		if appNetPresent {
-			for _, clientConfig := range vpnConfig.ClientConfigList {
-				if clientConfig.SubnetBlock != "" &&
-					clientConfig.SubnetBlock != appLink.SubnetBlock {
-					errorStr := clientConfig.SubnetBlock
-					errorStr = errorStr + ", appNet: " + appLink.SubnetBlock
-					return vpnConfig, errors.New("Subnet Mismatch: " + errorStr)
-				}
-			}
-		}
-	}
-	if log.GetLevel() == log.DebugLevel {
-		if bytes, err := json.Marshal(vpnConfig); err == nil {
-			log.Debugf("strongSwanVpnConfigGet(): %s\n",
-				string(bytes))
-		}
-	}
-	return vpnConfig, nil
-}
-
-func strongSwanVpnConfigParse(opaqueConfig string) (types.VpnServiceConfig, error) {
+func strongSwanVpnConfigParse(opaqueConfig string) (types.VpnConfig, error) {
 	log.Infof("strongSwanVpnConfigParse(): parsing %s\n", opaqueConfig)
-	vpnConfig := types.VpnServiceConfig{}
+	vpnConfig := types.VpnConfig{}
 
 	cb := []byte(opaqueConfig)
-	strongSwanConfig := types.StrongSwanServiceConfig{}
+	strongSwanConfig := types.StrongSwanConfig{}
 	if err := json.Unmarshal(cb, &strongSwanConfig); err != nil {
 		log.Errorf("%s for strongSwanVpnConfigParse()\n", err.Error())
 		return vpnConfig, err
@@ -471,12 +246,12 @@ func strongSwanVpnConfigParse(opaqueConfig string) (types.VpnServiceConfig, erro
 	return vpnConfig, nil
 }
 
-func strongSwanVpnStatusParse(opaqueStatus string) (types.VpnServiceConfig, error) {
+func strongSwanVpnStatusParse(opaqueStatus string) (types.VpnConfig, error) {
 
 	log.Debugf("strongSwanVpnStatusParse: parsing %s\n", opaqueStatus)
 
 	cb := []byte(opaqueStatus)
-	vpnConfig := types.VpnServiceConfig{}
+	vpnConfig := types.VpnConfig{}
 	if err := json.Unmarshal(cb, &vpnConfig); err != nil {
 		log.Errorf("strongSwanVpnStatusParse(): %v\n", err.Error())
 		return vpnConfig, err
@@ -484,7 +259,7 @@ func strongSwanVpnStatusParse(opaqueStatus string) (types.VpnServiceConfig, erro
 	return vpnConfig, nil
 }
 
-func strongSwanVpnCreate(vpnConfig types.VpnServiceConfig) error {
+func strongSwanVpnCreate(vpnConfig types.VpnConfig) error {
 
 	gatewayConfig := vpnConfig.GatewayConfig
 
@@ -497,7 +272,7 @@ func strongSwanVpnCreate(vpnConfig types.VpnServiceConfig) error {
 	}
 
 	// create ipsec.conf
-	if err := ipSecServiceConfigCreate(vpnConfig); err != nil {
+	if err := ipSecConfigCreate(vpnConfig); err != nil {
 		return err
 	}
 
@@ -526,7 +301,7 @@ func strongSwanVpnCreate(vpnConfig types.VpnServiceConfig) error {
 	}
 
 	// request ipsec service start
-	if err := ipSecServiceActivate(vpnConfig); err != nil {
+	if err := ipSecActivate(vpnConfig); err != nil {
 		return err
 	}
 
@@ -537,7 +312,7 @@ func strongSwanVpnCreate(vpnConfig types.VpnServiceConfig) error {
 	return nil
 }
 
-func strongSwanVpnDelete(vpnConfig types.VpnServiceConfig) error {
+func strongSwanVpnDelete(vpnConfig types.VpnConfig) error {
 
 	gatewayConfig := vpnConfig.GatewayConfig
 
@@ -547,7 +322,7 @@ func strongSwanVpnDelete(vpnConfig types.VpnServiceConfig) error {
 
 	// reset ipsec.conf/ipsec.secrets
 	// set default files in place of existing
-	if err := ipSecServiceConfigDelete(); err != nil {
+	if err := ipSecConfigDelete(); err != nil {
 		return err
 	}
 
@@ -580,7 +355,7 @@ func strongSwanVpnDelete(vpnConfig types.VpnServiceConfig) error {
 	return nil
 }
 
-func strongSwanVpnActivate(vpnConfig types.VpnServiceConfig) error {
+func strongSwanVpnActivate(vpnConfig types.VpnConfig) error {
 
 	clientConfig := vpnConfig.ClientConfigList[0]
 	tunnelConfig := clientConfig.TunnelConfig
@@ -616,7 +391,7 @@ func strongSwanVpnActivate(vpnConfig types.VpnServiceConfig) error {
 	// check ipsec tunnel status
 	if err := ipSecTunnelStateCheck(vpnConfig.VpnRole, tunnelConfig.Name); err != nil {
 		log.Errorf("%s for %s ipSec status", err.Error(), tunnelConfig.Name)
-		if err2 := ipSecServiceActivate(vpnConfig); err2 != nil {
+		if err2 := ipSecActivate(vpnConfig); err2 != nil {
 			return err2
 		}
 		return err
@@ -631,15 +406,15 @@ func strongSwanVpnActivate(vpnConfig types.VpnServiceConfig) error {
 	return nil
 }
 
-func strongSwanVpnInactivate(vpnConfig types.VpnServiceConfig) error {
-	if err := ipSecServiceInactivate(vpnConfig); err != nil {
+func strongSwanVpnInactivate(vpnConfig types.VpnConfig) error {
+	if err := ipSecInactivate(vpnConfig); err != nil {
 		return err
 	}
 	return nil
 }
 
 // misc utility routines
-func checkForClientDups(config types.StrongSwanServiceConfig) error {
+func checkForClientDups(config types.StrongSwanConfig) error {
 
 	// check for atleast one pre-shared key configuration
 	if config.PreSharedKey == "" {
@@ -742,35 +517,7 @@ func vpnValidateIpAddr(ipAddrStr string, isValid bool) error {
 	return nil
 }
 
-func strongSwanVpnStatusGet(ctx *zedrouterContext,
-	status *types.NetworkServiceStatus) bool {
-	change := false
-	vpnConfig, err := strongSwanVpnStatusParse(status.OpaqueStatus)
-	if err != nil {
-		log.Infof("StrongSwanVpn config absent\n")
-		return change
-	}
-	vpnStatus := new(types.ServiceVpnStatus)
-	if err := ipSecStatusCmdGet(vpnStatus); err != nil {
-		return change
-	}
-	if err := swanCtlCmdGet(vpnStatus); err != nil {
-		return change
-	}
-
-	vpnStatus.PolicyBased = vpnConfig.PolicyBased
-
-	// if tunnel state have changed, update
-	if change = isVpnStatusChanged(status.VpnStatus, vpnStatus); change {
-		log.Debugf("vpn state change:%v\n", vpnStatus)
-		status.VpnStatus = vpnStatus
-	}
-	// push the vpnMetrics here
-	publishVpnMetrics(ctx, status, vpnStatus)
-	return change
-}
-
-func isVpnStatusChanged(oldStatus, newStatus *types.ServiceVpnStatus) bool {
+func isVpnStatusChanged(oldStatus, newStatus *types.VpnStatus) bool {
 	if oldStatus == nil {
 		return true
 	}
@@ -853,32 +600,6 @@ func matchConnState(oldConn, newConn *types.VpnConnStatus) bool {
 	return true
 }
 
-func publishVpnMetrics(ctx *zedrouterContext,
-	status *types.NetworkServiceStatus, vpnStatus *types.ServiceVpnStatus) {
-	metrics := new(types.NetworkServiceMetrics)
-	metrics.UUID = status.UUID
-	metrics.DisplayName = status.DisplayName
-	metrics.Type = status.Type
-
-	// get older metrics, if any
-	vpnMetrics := new(types.VpnMetrics)
-	oldMetrics := lookupNetworkServiceMetrics(ctx, metrics.Key())
-
-	// for cumulative stats, take the old metrics stats
-	// and add the difference to the metrics
-	if oldMetrics != nil && oldMetrics.VpnMetrics != nil {
-		vpnMetrics.DataStat.InPkts = oldMetrics.VpnMetrics.DataStat.InPkts
-		vpnMetrics.DataStat.OutPkts = oldMetrics.VpnMetrics.DataStat.OutPkts
-	}
-
-	publishVpnConnMetrics(ctx, status, oldMetrics, vpnMetrics, vpnStatus)
-	publishVpnMetricsAclCounters(vpnMetrics)
-	metrics.VpnMetrics = vpnMetrics
-	pub := ctx.pubNetworkServiceMetrics
-	pub.Publish(metrics.Key(), &metrics)
-	return
-}
-
 func publishVpnMetricsAclCounters(vpnMetrics *types.VpnMetrics) {
 
 	if pktStat, err := iptableCounterRuleStat(vpnCounterAcls[0]); err == nil {
@@ -899,62 +620,6 @@ func publishVpnMetricsAclCounters(vpnMetrics *types.VpnMetrics) {
 	if pktStat, err := iptableCounterRuleStat(vpnCounterAcls[5]); err == nil {
 		vpnMetrics.EspStat.OutPkts = pktStat
 	}
-}
-
-func publishVpnConnMetrics(ctx *zedrouterContext,
-	status *types.NetworkServiceStatus, oldMetrics *types.NetworkServiceMetrics,
-	vpnMetrics *types.VpnMetrics, vpnStatus *types.ServiceVpnStatus) {
-
-	if len(vpnStatus.ActiveVpnConns) == 0 {
-		return
-	}
-	vpnMetrics.VpnConns = make([]*types.VpnConnMetrics,
-		len(vpnStatus.ActiveVpnConns))
-	for idx, connStatus := range vpnStatus.ActiveVpnConns {
-		connMetrics := new(types.VpnConnMetrics)
-		connMetrics.Id = connStatus.Id
-		connMetrics.Name = connStatus.Name
-		connMetrics.Type = status.Type
-		connMetrics.EstTime = connStatus.EstTime
-		connMetrics.LEndPoint.IpAddr = connStatus.LInfo.IpAddr
-		connMetrics.REndPoint.IpAddr = connStatus.RInfo.IpAddr
-
-		// get the last metrics
-		oldConnMetrics := getVpnMetricsOldConnStats(oldMetrics, connStatus.Id)
-		// loop through the current setof SAs
-		for _, linkStatus := range connStatus.Links {
-			if linkStatus.State != types.VPN_INSTALLED {
-				continue
-			}
-			lStats := linkStatus.LInfo
-			connMetrics.LEndPoint.LinkInfo.SpiId = lStats.SpiId
-			connMetrics.LEndPoint.LinkInfo.SubNet = lStats.SubNet
-			connMetrics.LEndPoint.PktStats = lStats.PktStats
-
-			rStats := linkStatus.RInfo
-			connMetrics.REndPoint.LinkInfo.SpiId = rStats.SpiId
-			connMetrics.REndPoint.LinkInfo.SubNet = rStats.SubNet
-			connMetrics.REndPoint.PktStats = rStats.PktStats
-
-			// increment cumulative stats
-			incrementVpnMetricsConnStats(vpnMetrics,
-				oldConnMetrics, linkStatus)
-		}
-		vpnMetrics.VpnConns[idx] = connMetrics
-	}
-}
-
-func getVpnMetricsOldConnStats(oldMetrics *types.NetworkServiceMetrics,
-	id string) *types.VpnConnMetrics {
-	if oldMetrics == nil || oldMetrics.VpnMetrics == nil {
-		return nil
-	}
-	for _, connStatus := range oldMetrics.VpnMetrics.VpnConns {
-		if connStatus.Id == id {
-			return connStatus
-		}
-	}
-	return nil
 }
 
 // get the cumulative stats
@@ -986,12 +651,12 @@ func incrementVpnMetricsConnStats(vpnMetrics *types.VpnMetrics,
 	vpnMetrics.DataStat.OutPkts.Pkts += outPktStats.Pkts
 }
 
-func strongSwanConfigGetForNetworkInstance(ctx *zedrouterContext,
-	status *types.NetworkInstanceStatus) (types.VpnServiceConfig, error) {
+func strongSwanConfigGet(ctx *zedrouterContext,
+	status *types.NetworkInstanceStatus) (types.VpnConfig, error) {
 
 	port := types.NetLinkConfig{}
 	appLink := types.NetLinkConfig{}
-	vpnConfig := types.VpnServiceConfig{}
+	vpnConfig := types.VpnConfig{}
 	appNetPresent := false
 
 	// if adapter is not set, return
@@ -1125,7 +790,7 @@ func strongSwanConfigGetForNetworkInstance(ctx *zedrouterContext,
 	return vpnConfig, nil
 }
 
-func strongSwanVpnStatusGetForNetworkInstance(ctx *zedrouterContext,
+func strongSwanVpnStatusGet(ctx *zedrouterContext,
 	status *types.NetworkInstanceStatus, nis *types.NetworkInstanceMetrics) bool {
 	change := false
 	if status.Type != types.NetworkInstanceTypeCloud {
@@ -1136,7 +801,7 @@ func strongSwanVpnStatusGetForNetworkInstance(ctx *zedrouterContext,
 		log.Infof("StrongSwanVpn config absent\n")
 		return change
 	}
-	vpnStatus := new(types.ServiceVpnStatus)
+	vpnStatus := new(types.VpnStatus)
 	if err := ipSecStatusCmdGet(vpnStatus); err != nil {
 		return change
 	}
@@ -1152,12 +817,12 @@ func strongSwanVpnStatusGetForNetworkInstance(ctx *zedrouterContext,
 		status.VpnStatus = vpnStatus
 	}
 	// push the vpnMetrics here
-	publishVpnMetricsForNetworkInstance(ctx, status, vpnStatus, nis)
+	publishVpnMetrics(ctx, status, vpnStatus, nis)
 	return change
 }
 
-func publishVpnMetricsForNetworkInstance(ctx *zedrouterContext,
-	status *types.NetworkInstanceStatus, vpnStatus *types.ServiceVpnStatus,
+func publishVpnMetrics(ctx *zedrouterContext,
+	status *types.NetworkInstanceStatus, vpnStatus *types.VpnStatus,
 	nis *types.NetworkInstanceMetrics) {
 
 	// get older metrics, if any
@@ -1171,15 +836,15 @@ func publishVpnMetricsForNetworkInstance(ctx *zedrouterContext,
 		vpnMetrics.DataStat.OutPkts = oldMetrics.VpnMetrics.DataStat.OutPkts
 	}
 
-	publishVpnConnMetricsForNetworkInstance(ctx, status, oldMetrics, vpnMetrics, vpnStatus)
+	publishVpnConnMetrics(ctx, status, oldMetrics, vpnMetrics, vpnStatus)
 	publishVpnMetricsAclCounters(vpnMetrics)
 	nis.VpnMetrics = vpnMetrics
 	return
 }
 
-func publishVpnConnMetricsForNetworkInstance(ctx *zedrouterContext,
+func publishVpnConnMetrics(ctx *zedrouterContext,
 	status *types.NetworkInstanceStatus, oldMetrics *types.NetworkInstanceMetrics,
-	vpnMetrics *types.VpnMetrics, vpnStatus *types.ServiceVpnStatus) {
+	vpnMetrics *types.VpnMetrics, vpnStatus *types.VpnStatus) {
 
 	if len(vpnStatus.ActiveVpnConns) == 0 {
 		return
@@ -1196,7 +861,7 @@ func publishVpnConnMetricsForNetworkInstance(ctx *zedrouterContext,
 		connMetrics.REndPoint.IpAddr = connStatus.RInfo.IpAddr
 
 		// get the last metrics
-		oldConnMetrics := getVpnMetricsOldConnStatsForNetworkInstance(oldMetrics, connStatus.Id)
+		oldConnMetrics := getVpnMetricsOldConnStats(oldMetrics, connStatus.Id)
 		// loop through the current setof SAs
 		for _, linkStatus := range connStatus.Links {
 			if linkStatus.State != types.VPN_INSTALLED {
@@ -1220,7 +885,7 @@ func publishVpnConnMetricsForNetworkInstance(ctx *zedrouterContext,
 	}
 }
 
-func getVpnMetricsOldConnStatsForNetworkInstance(oldMetrics *types.NetworkInstanceMetrics,
+func getVpnMetricsOldConnStats(oldMetrics *types.NetworkInstanceMetrics,
 	id string) *types.VpnConnMetrics {
 	if oldMetrics == nil || oldMetrics.VpnMetrics == nil {
 		return nil
