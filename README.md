@@ -11,7 +11,7 @@ To get its job done, EVE leverages a lot of great open source projects: [Xen Pro
 
 # How to use
 
-You will need qemu (https://www.qemu.org/), Docker (https://www.docker.com) 
+You will need qemu 3.x+ (https://www.qemu.org/), Docker (https://www.docker.com)
 and go 1.12+ (https://golang.org) installed in your system.
 
 Note, that since Linuxkit and manifest-tool are evolving pretty rapidly, we're
@@ -81,7 +81,7 @@ Once the image boots you can interact with it either by using the console
 (right there in the terminal window from which make run was executed).
 Your shell in the console is connected to the 'host' os. Everything
 interesting is actually happening in the pillar container. Use
-`zen enter` command to enter it (or if you're comfortable with ctr CLI
+`eve enter` command to enter it (or if you're comfortable with ctr CLI
 from containerd - use that instead).
 
 Once in a container you can run the usual xl commands to start VMs and

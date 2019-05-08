@@ -16,7 +16,7 @@ DOCKER_TAG=zededa/ztools:local$${GOARCH:+-}$(GOARCH)
 APPS = zedbox
 APPS1 = logmanager ledmanager downloader verifier client zedrouter domainmgr \
         identitymgr zedmanager zedagent hardwaremodel ipcmonitor nim diag    \
-        baseosmgr wstunnelclient conntrack
+        baseosmgr wstunnelclient conntrack lisp-ztr waitforaddr
 
 .PHONY: all clean build test build-docker build-docker-git shell
 
@@ -30,7 +30,7 @@ build: $(APPS) $(APPS1)
 $(APPS): $(DISTDIR)/$(APPS)
 $(DISTDIR)/$(APPS): $(DISTDIR)
 	@echo "Building $@"
-	cd $(@F) ; $(GOBUILD) go build -mod=vendor -ldflags -X=main.Version=$(BUILD_VERSION) -o ../$@ .
+	go build -mod=vendor -ldflags -X=main.Version=$(BUILD_VERSION) -o $@ ./$(@F)
 
 $(APPS1): $(DISTDIR)
 	@echo $@
